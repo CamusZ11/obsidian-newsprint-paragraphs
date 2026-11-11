@@ -1,5 +1,30 @@
 const { Plugin } = require("obsidian");
 
+// Break only around a line whose only meaningful node is an image.
+function quoteImageBreaks(nodes) {
+  const lines = [[]];
+  const breaks = [];
+  for (const node of nodes) {
+    if (node.nodeName === "BR") {
+      breaks.push(node);
+      lines.push([]);
+    } else if (node.nodeType === 1 || node.textContent.trim()) {
+      lines.at(-1).push(node);
+    }
+  }
+  const isImage = (line) => {
+    if (line.length !== 1) return false;
+    const node = line[0];
+    if (node.matches?.(".image-embed, img")) return true;
+    // Obsidian may resolve a local image after this postprocessor runs.
+    return node.matches?.(".internal-embed[src]") &&
+      /\.(?:avif|bmp|gif|ico|jpe?g|png|svg|webp)(?:[?#].*)?$/i.test(node.getAttribute("src"));
+  };
+  return new Set(breaks.filter((_, i) =>
+    lines[i].length && lines[i + 1].length && (isImage(lines[i]) || isImage(lines[i + 1]))
+  ));
+}
+
 module.exports = class NewsprintParagraphs extends Plugin {
   onload() {
     this.registerMarkdownPostProcessor((element) => {
@@ -12,11 +37,15 @@ module.exports = class NewsprintParagraphs extends Plugin {
 
   splitProse(element) {
     for (const paragraph of element.querySelectorAll("p")) {
-      // Only root prose blocks. Preserve deliberate line breaks in structured
-      // content, including lists, quotes, callouts and table cells.
-      if (paragraph.parentElement !== element) continue;
-      if (paragraph.closest("blockquote, li, .callout, td, th, pre, .metadata-container")) continue;
-      if (!Array.from(paragraph.children).some((node) => node.tagName === "BR")) continue;
+      // Preserve structured content and normal line breaks inside quotes.
+      const quote = paragraph.parentElement.closest("blockquote");
+      if (paragraph.closest("li, .callout, td, th, pre, .metadata-container")) continue;
+      if (quote) {
+        if (quote.parentElement.closest("blockquote") || paragraph.parentElement !== quote || (quote !== element && quote.parentElement !== element)) continue;
+      } else if (paragraph.parentElement !== element) continue;
+      const nodes = Array.from(paragraph.childNodes);
+      const breaks = quote ? quoteImageBreaks(nodes) : new Set(nodes.filter((node) => node.nodeName === "BR"));
+      if (!breaks.size) continue;
 
       const document = paragraph.ownerDocument;
       const fragment = document.createDocumentFragment();
@@ -27,8 +56,8 @@ module.exports = class NewsprintParagraphs extends Plugin {
         part = document.createElement("span");
         part.className = "np-paragraph";
       };
-      for (const node of Array.from(paragraph.childNodes)) {
-        if (node.nodeType === 1 && node.tagName === "BR") appendPart();
+      for (const node of nodes) {
+        if (breaks.has(node)) appendPart();
         else part.append(node);
       }
       appendPart();
