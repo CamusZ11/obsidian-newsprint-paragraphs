@@ -1,7 +1,7 @@
 {
   "id": "newsprint-paragraphs",
   "name": "Newsprint Paragraphs",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "minAppVersion": "1.10.6",
   "description": "Display compact prose as spaced paragraphs with Newsprint by Camus, without editing Markdown files.",
   "author": "Camus",
